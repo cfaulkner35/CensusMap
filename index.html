@@ -1,63 +1,61 @@
+library(tidyverse)
+library(tidycensus)
+library(ggplot2)
+library(Hmisc)
+library(sf)
+library(leaflet)
+library(stringr)
+library(htmlwidgets)
+
 census_api_key("12b80ea1ddcb138b84c3a2f525661786a48a7998")
 ACS<-load_variables(2020,
                     "acs5",
                     cache=FALSE)
-Variables<-c(MHI = "B19013_001", # Median Household Income
-             MHV = "B25077_001", # Median Home Value
-             Totalpop = "B01003_001") # Total Population
-SacramentoMSA<-get_acs(geography = "tract",  #Defining the spatial scale
-                variables = Variables, #grabbing the variables we defined previously
-                survey = "acs5",      # survey we are pulling is the ACS 5 year estimates
-                year = 2020,   # End year for the 5 year estimates- 2016-2020
-                output = "wide", # data format wide (cross sectional)
-                state="CA", # Define which State you want to pull data from
+Variables<-c(MHI = "B19013_001", 
+             MHV = "B25077_001", 
+             Totalpop = "B01003_001") 
+SacramentoMSA<-get_acs(geography = "tract",  
+                variables = Variables, 
+                survey = "acs5",      
+                year = 2020,   
+                output = "wide", 
+                state="CA", 
                 county= c("Sacramento","Yolo", "Placer", "El Dorado", "Sutter", "Yuba", "Nevada"), # Defining the counties in the state that the data will come from
-                geometry=T) # Pulls the spatial data information with it.
+                geometry=T) 
 
-# First 10 records/observations return
-head(SacramentoMSA)
-
-# summary() provides an overview of the data
-summary(SacramentoMSA)
-
-# Lets clean up this data a little bit before we go too far
-# Here we are just pulling out the columns we care about using the indexing dataframe[,c("column name","etc")]
 Sacramento<-SacramentoMSA[,c("GEOID", "NAME", "MHIE", "MHVE", "TotalpopE", "geometry")]
-# Easy renaming of the variables
+
 names(Sacramento)[names(Sacramento) =="MHIE"]<-"MHI"
 names(Sacramento)[names(Sacramento) =="MHVE"]<-"MHV"
 names(Sacramento)[names(Sacramento) =="TotalpopE"]<-"Totalpop"
 
-
-### Setting up the color palletes
 SalMHI<-colorQuantile(palette = "magma", domain=Sacramento$MHI, n=10)
 SalMHV<-colorQuantile(palette = "RdYlGn", domain=Sacramento$MHV, n=10)
 Salpop<-colorQuantile(palette = "RdBu", domain=Sacramento$Totalpop, n=10)
 
 
 ### The Leaflet map
-## Named map
-## this will take awhile
-Samap<-Sacramento %>% # Data set you want to map and the '%>%' is a piping command which makes it keep moving forward 
-  st_transform(crs = "+init=epsg:4326") %>% # Setting the projection of our simple feature spatial dataframe to match the webmapping application
-  leaflet() %>%  # Leaflet function which puts this all in motion
-  setView(lng = -121.47, lat = 38.57, zoom = 8)%>% # the lng and lat set the center point, while zoom chooses how zoomed in it is
-  addTiles(group = "OSM (default)") %>%  #This sets the base map and the following addProviderTiles() are optional otehr basemaps
+
+Samap<-Sacramento %>% 
+  st_transform(crs = "+init=epsg:4326") %>% 
+  leaflet() %>%  
+  setView(lng = -121.47, lat = 38.57, zoom = 8)%>%  
+  addTiles(group = "OSM (default)") %>% 
   addTiles(
     urlTemplate = paste0("https://tiles.stadiamaps.com/tiles/stamen_toner_lite/{z}/{x}/{y}@2x.png?api_key=6308a316-587e-4ce8-b35d-5381a2c5c79e"),
     attribution = '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> contributors',
-    group = "Toner Lite"  # Group the layer for layer control
+    group = "Toner Lite"  
   ) %>%
   addProviderTiles(providers$CartoDB.Positron, group = "Carto B") %>%
-  addPolygons(group = "Total", #Add polygons is how we choose what we want to map.
-              popup = paste("Census Tract: ", Sacramento$NAME, "<br>", #Pop up provides the pop up information if we were to click on the county, paste() pastes all the text together
-                            "Total Population: ", Sacramento$Totalpop, "<br>", # <br> is html code for new line.   
+  addPolygons(group = "Total", 
+              popup = paste("Census Tract: ", Sacramento$NAME, "<br>",
+                            "Total Population: ", Sacramento$Totalpop, "<br>",    
                             "Median Household Income: ", "$", Sacramento$MHI, "<br>",
                             "Median Home Value: ", "$", Sacramento$MHV, "<br>"),
               stroke = FALSE,
               smoothFactor = 0,
               fillOpacity = 0.7,
-              color = ~ Salpop(Totalpop)) %>% #Color palette or what the color scheme is.  You made these earlier and they need to match
+              color = ~ Salpop(Totalpop)) %>% 
   addLegend(position = "bottomleft", pal=Salpop, values= Sacramento$Totalpop, #Legend for this polygon layer
             title="Percentile of Census Tract Total Population", group = "Total", opacity = 1) %>% 
   addPolygons(group = "MHI", #Next layer with the same set up as before.  We could add as many as the computer would let us. 
@@ -82,10 +80,10 @@ Samap<-Sacramento %>% # Data set you want to map and the '%>%' is a piping comma
               color = ~ SalMHV(MHV)) %>%
   addLegend(position = "bottomleft", pal=SalMHV, values= Sacramento$MHV, 
             title="Percentile of Census Tract Median Household Income", group = "MHV", opacity = 1) %>% 
-  # Here we hide two of the groups so that only one shows on loading
-  hideGroup("MHI") %>% # Hides the MHI layer so it doesn't all pop up at load
-  hideGroup("MHV") %>% # Hides the MHV layer so it all doesn't pop up at the load
-  addLayersControl(  #Gives you the option to turn on and off different basemaps or layers.
+  
+  hideGroup("MHI") %>% 
+  hideGroup("MHV") %>% 
+  addLayersControl(
     baseGroups = c("OSM (default)", "Toner Lite", "Carto B"),
     overlayGroups = c("Total", "MHI", "MHV"),
     options = layersControlOptions(collapsed = FALSE)) 
